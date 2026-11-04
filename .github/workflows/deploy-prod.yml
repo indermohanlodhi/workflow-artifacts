@@ -1,0 +1,11 @@
+name: Deploy Prod
+
+on:
+  workflow_run:
+    workflows: ["Build and Deploy"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: read
