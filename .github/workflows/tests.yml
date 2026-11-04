@@ -12,9 +12,65 @@ permissions:
   contents: read
 
 jobs:
+  find_issue:
+    name: Find Exercise Issue
+    runs-on: ubuntu-latest
+    outputs:
+      issue_url: ${{ steps.issue.outputs.ISSUE_URL }}
+      issue_number: ${{ steps.issue.outputs.ISSUE_NUMBER }}
+    steps:
+      - name: Find exercise issue
+        id: issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo
+            const prefix = (process.env.ISSUE_TITLE_PREFIX || 'Exercise').trim()
+            const issues = []
+
+            for (let page = 1; ; page++) {
+              const response = await github.rest.issues.listForRepo({
+                owner,
+                repo,
+                state: 'all',
+                sort: 'created',
+                direction: 'desc',
+                per_page: 100,
+                page,
+              })
+
+              const pageIssues = response.data.filter(item => !item.pull_request)
+              issues.push(...pageIssues)
+
+              if (response.data.length < 100) break
+            }
+
+            core.startGroup(`Found ${issues.length} issues in total`)
+            issues.forEach(issue => {
+              core.info(`#${issue.number}: ${issue.title} - ${issue.html_url}`)
+            })
+            core.endGroup()
+
+            const issue = issues.find(item => item.title.includes(prefix))
+
+            if (!issue) {
+              core.warning(`No issue found matching prefix "${prefix}"`)
+              core.setOutput('ISSUE_URL', '')
+              core.setOutput('ISSUE_NUMBER', '')
+              return
+            }
+
+            core.info(`Exercise issue found: #${issue.number} (${issue.html_url})`)
+            core.setOutput('ISSUE_URL', issue.html_url)
+            core.setOutput('ISSUE_NUMBER', String(issue.number))
+        env:
+          ISSUE_TITLE_PREFIX: Exercise
+
   coverage:
     name: Tests with Coverage
     runs-on: ubuntu-latest
+    needs: find_issue
     steps:
       - uses: actions/checkout@v4
 
@@ -34,6 +90,7 @@ jobs:
   e2e:
     name: E2E Tests with Playwright
     runs-on: ubuntu-latest
+    needs: find_issue
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
